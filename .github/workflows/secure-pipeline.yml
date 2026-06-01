@@ -1,0 +1,60 @@
+name: Secure SDLC Pipeline
+ 
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+ 
+permissions:
+  pull-requests: write
+  issues: write
+ 
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+ 
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+ 
+      - name: Lint Dockerfile with Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+        continue-on-error: true
+ 
+      - name: Build Docker image
+        run: docker build -t juiceshop-test:latest .
+ 
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/docker@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: juiceshop-test:latest
+          args: --severity-threshold=medium
+        continue-on-error: true
+ 
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        continue-on-error: true
+ 
+      - name: Run Dockle
+        uses: erzz/dockle-action@main
+        with:
+          image: juiceshop-test:latest
+          report-format: json
+          report-name: dockle-report
+        continue-on-error: true
+ 
+      - name: Upload Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            dockle-report.json
+        if: always()
